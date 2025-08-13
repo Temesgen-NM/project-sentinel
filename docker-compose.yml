@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: sentinel-honeypot
+    ports:
+      - "2222:2222"  # SSH port
+      - "2323:2323"  # Telnet port
+    volumes:
+      - cowrie_logs:/cowrie/var/log/cowrie
+      - cowrie_downloads:/cowrie/var/lib/cowrie/downloads
+    restart: unless-stopped
+
+volumes:
+  cowrie_logs:
+  cowrie_downloads:
