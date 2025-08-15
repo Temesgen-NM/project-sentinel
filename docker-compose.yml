@@ -1,17 +1,87 @@
-version: '3.8'
-
 services:
+  # The Sensor Layer
   cowrie:
+    # ... (no changes to cowrie)
     image: cowrie/cowrie:latest
     container_name: sentinel-honeypot
+    user: "0:0"
     ports:
-      - "2222:2222"  # SSH port
-      - "2323:2323"  # Telnet port
+      - "2222:2222"
+      - "2323:2323"
     volumes:
-      - cowrie_logs:/cowrie/var/log/cowrie
-      - cowrie_downloads:/cowrie/var/lib/cowrie/downloads
+      - cowrie_var:/cowrie/var
+      - ./infra/honeypot/cowrie.cfg:/cowrie/etc/cowrie.cfg:ro
+    restart: unless-stopped
+    networks:
+      - sentinel-net
+
+  # The Brain
+  elasticsearch:
+    # ... (no changes to elasticsearch)
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: sentinel-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ELASTIC_PASSWORD=
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - sentinel-net
+    restart: unless-stopped
+
+  # The Eyes
+  kibana:
+    # ... (no changes to kibana)
+    image: docker.elastic.co/kibana/kibana:8.11.1
+    container_name: sentinel-kibana
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - sentinel-net
+    restart: unless-stopped
+
+  # The Nerves
+  filebeat:
+    # ... (no changes to filebeat)
+    image: docker.elastic.co/beats/filebeat:8.11.1
+    container_name: sentinel-filebeat
+    user: "0:0"
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./infra/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - cowrie_var:/log-data:ro
+    networks:
+      - sentinel-net
+    restart: unless-stopped
+
+  # The Application Brain
+  sentinel_app:
+    build: .
+    container_name: sentinel-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+    env_file:
+      - .env
+    depends_on:
+      - elasticsearch
+    command: uvicorn sentinel.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - sentinel-net
     restart: unless-stopped
 
 volumes:
-  cowrie_logs:
-  cowrie_downloads:
+  cowrie_var:
+  elastic_data:
+
+networks:
+  sentinel-net:

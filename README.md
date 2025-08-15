@@ -2,52 +2,36 @@
 
 *An AI-Powered Threat Intelligence Platform for Proactive Security Defense.*
 
-A project by **Temesgen Melaku**.
-
 ---
 
-## 1. Abstract
+## 1. Overview
 
-Project-Sentinel is a self-contained, automated platform engineered to generate high-fidelity threat intelligence. It addresses the limitations of generic security feeds by creating a proprietary data asset from real-world attack traffic. The platform leverages an integrated machine learning engine to analyze attacker behavior, automatically distinguishing between low-level automated noise and sophisticated, high-risk threats. Actionable intelligence is delivered through both an interactive analytics dashboard and a machine-readable API, enabling direct integration with security infrastructure for prioritized, proactive defense.
+Project-Sentinel is a self-contained, automated platform that generates high-fidelity threat intelligence. It uses a live honeypot to capture real-world attack data, processes it through a Python-based analysis engine to enrich and score threats, and serves this intelligence via a REST API and a Kibana dashboard.
 
-## 2. The Opportunity
+## 2. Core Features
 
-Cybersecurity defense is often overwhelmed by the sheer volume of low-grade alerts, making it difficult to identify targeted and novel threats. This "alert fatigue" creates a critical visibility gap. Furthermore, reliance on generic external data prevents the development of a proprietary data asset that accurately reflects the specific threat landscape an organization faces. Project-Sentinel is designed to solve both problems: to filter the noise and to create a uniquely valuable, context-aware intelligence source.
+*   **Live Threat Capture:** Utilizes a Cowrie SSH/Telnet honeypot to capture attacker interactions in real-time.
+*   **Automated Processing Pipeline:** A continuous background process automatically fetches, cleans, and structures raw log data.
+*   **Heuristic AI Risk Scoring:** Each event is analyzed and assigned a risk score based on its characteristics (e.g., successful logins, commands executed), allowing for instant threat prioritization.
+*   **REST API for Intelligence:** A secure, documented FastAPI provides endpoints to access the processed intelligence, including a dedicated endpoint for high-risk events.
+*   **Interactive C-SOC Dashboard:** A Kibana dashboard provides a geo-map of attacker origins, a sortable table of threats by risk score, and other key visualizations.
+*   **Fully Containerized:** The entire stack is managed via Docker Compose for easy deployment and scalability.
 
-## 3. The Sentinel Solution
+## 3. How to Run
 
-Sentinel operates on a simple yet powerful principle: **Go to the threats, don't wait for them to arrive.**
+1.  Ensure Docker and Docker Compose are installed.
+2.  Create a `.env` file from the `ELASTICSEARCH_URL=http://elasticsearch:9200` and `API_KEY=your-secret-api-key-12345` variables.
+3.  Run the command: `docker-compose up -d --build`
+4.  Access the Kibana dashboard at `http://localhost:5601`.
+5.  Access the API documentation at `http://localhost:8000/docs`.
 
-The platform operates a network of sensors (honeypots) that act as decoys on the public internet, meticulously logging unsolicited malicious traffic. This raw data is ingested into a central analytics engine where it is enriched with contextual data.
+## 4. Technology Stack
 
-Crucially, the platform then passes this data through an **AI analysis layer**. This layer uses behavioral modeling to learn what constitutes a "normal" automated attack. It then automatically prioritizes events that deviate from this baseline, assigning a risk score to every threat. The result is a continuously updated feed of pre-triaged intelligence, allowing security teams to focus their efforts where they matter most.
-
-## 4. Core Capabilities
-
-*   **Live Threat Capture:** Deploys and manages a network of sensors designed to attract and log malicious activity from the public internet in real-time.
-*   **AI-Powered Threat Triage:** Utilizes a machine learning engine to analyze attacker behavior (e.g., session duration, command complexity) to distinguish between automated bots and potentially targeted threats, assigning a dynamic risk score to each event.
-*   **Automated Contextual Enrichment:** Augments raw data with crucial context, such as GeoIP location, ISP information, and external threat reputation scores.
-*   **Prioritized Analytics & Visualization:** Provides an interactive UI for visualizing attack patterns, with a specific focus on high-risk events flagged by the AI engine.
-*   **Integratable Intelligence Feeds:** Delivers clean, machine-readable intelligence—including risk scores—via a REST API, enabling firewalls and SIEMs to take risk-based actions.
-
-## 5. Primary Use Cases
-
-1.  **Intelligent, Automated Defense:** The API feed allows firewalls to implement dynamic rules, such as blocking all IPs with a risk score above 90, providing a more resilient and intelligent defense than static blocklists.
-2.  **High-Fidelity SIEM Enrichment:** By feeding prioritized alerts into a SIEM, Sentinel dramatically reduces alert fatigue for security analysts and allows them to immediately focus on the most significant threats.
-3.  **Adversary Research & Tracking:** The platform enables analysts to study the TTPs (Tactics, Techniques, and Procedures) of the highest-risk actors, leading to a deeper understanding of the adversary landscape.
-
-## 6. Proposed Technology Stack
-
-The platform will be built using a robust, scalable, and modern open-source architecture.
-
-*   **Core Application & API:** Python 3, FastAPI
-*   **Data Platform & AI:** The Elastic Stack
-    *   **Elasticsearch:** Storage, Search, and Machine Learning Anomaly Detection
-    *   **Kibana:** Visualization and Alerting
-    *   **Filebeat:** Data Ingestion
-*   **Sensor Layer:** Cowrie (SSH/Telnet Honeypot), with a modular design to incorporate other sensors.
+*   **Application & API:** Python 3, FastAPI
+*   **Data Platform & AI:** The Elastic Stack (Elasticsearch, Kibana, Filebeat)
+*   **Sensor:** Cowrie Honeypot
 *   **Infrastructure:** Docker, Docker Compose
 
-## 7. License
+## 5. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
