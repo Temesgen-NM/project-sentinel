@@ -2,9 +2,16 @@ filebeat.inputs:
 - type: log
   enabled: true
   paths:
-    - /log-data/log/cowrie/cowrie.json
+    - /log-data/var/log/cowrie/json/cowrie.json
   json.keys_under_root: true
   json.add_error_key: true
 
+processors:
+  - geoip:
+      field: src_ip
+      target_field: geoip
+      ignore_missing: true
+
 output.elasticsearch:
   hosts: ["elasticsearch:9200"]
+  pipeline: geoip

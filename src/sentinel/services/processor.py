@@ -1,12 +1,27 @@
 import asyncio
 import logging
-from elasticsearch import Elasticsearch, NotFoundError
+from elasticsearch import Elasticsearch
 from sentinel.config.settings import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-es_client = Elasticsearch(hosts=[settings.ELASTICSEARCH_URL], retry_on_timeout=True, max_retries=3)
+async def wait_for_elasticsearch(es_client: Elasticsearch):
+    """
+    Waits for Elasticsearch to become available before proceeding.
+    """
+    logger.info("Checking Elasticsearch connection...")
+    while True:
+        try:
+            if es_client.ping():
+                logger.info("Elasticsearch connection successful.")
+                break
+            else:
+                logger.warning("Elasticsearch not available yet, retrying in 10 seconds...")
+        except Exception as e:
+            logger.error(f"Elasticsearch connection failed: {e}. Retrying in 10 seconds...")
+        
+        await asyncio.sleep(10)
 
 def calculate_risk_score(event: dict) -> tuple[int, list[str]]:
     score = 10
@@ -39,8 +54,9 @@ def calculate_risk_score(event: dict) -> tuple[int, list[str]]:
     
     return min(max(score, 0), 100), factors
 
-async def process_new_events():
+async def process_new_events(es_client: Elasticsearch): # Accept client as argument
     logger.info('Threat processor background task started. Waiting for events...')
+    # Assumes wait_for_elasticsearch was called during app startup lifecycle
     
     if not es_client.indices.exists(index=settings.PROCESSED_INDEX):
         try:
@@ -62,7 +78,7 @@ async def process_new_events():
             
             response = es_client.search(
                 index=settings.SOURCE_INDEX,
-                body=query,
+                query=query['query'],
                 size=100
             )
 
@@ -81,6 +97,7 @@ async def process_new_events():
                     'timestamp': source_doc.get('@timestamp'),
                     'source_ip': source_doc.get('src_ip'),
                     'source_port': source_doc.get('src_port'),
+                    'geoip': source_doc.get('geoip'),
                     'username': source_doc.get('username'),
                     'password': source_doc.get('password'),
                     'event_type': source_doc.get('eventid'),
@@ -98,7 +115,7 @@ async def process_new_events():
                 es_client.update(
                     index=hit['_index'],
                     id=hit['_id'],
-                    body={'doc': {'sentinel_processed': True}}
+                    doc={'sentinel_processed': True}
                 )
 
         except Exception as e:
