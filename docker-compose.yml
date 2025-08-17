@@ -1,8 +1,10 @@
+version: '3.8'
+
 services:
   cowrie:
-    image: cowrie/cowrie:latest
+    build:
+      context: ./infra/honeypot # Build the custom Cowrie image
     container_name: sentinel-honeypot
-    user: '0:0'
     ports:
       - '2222:2222'
       - '2323:2323'
@@ -19,7 +21,6 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ELASTIC_PASSWORD=
     volumes:
       - elastic_data:/usr/share/elasticsearch/data
     ports:
@@ -37,19 +38,18 @@ services:
       - elasticsearch
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - xpack.security.enabled=false # The critical fix
+      - xpack.security.enabled=false
     networks:
       - sentinel-net
     restart: unless-stopped
 
   filebeat:
-    image: docker.elastic.co/beats/filebeat:8.11.1
+    build:
+      context: ./infra/filebeat # Build the custom Filebeat image
     container_name: sentinel-filebeat
-    user: '0:0'
     depends_on:
       - elasticsearch
     volumes:
-      - ./infra/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - cowrie_var:/log-data:ro
     networks:
       - sentinel-net
@@ -64,6 +64,8 @@ services:
       - ./src:/app/src
     env_file:
       - .env
+    environment:
+      - PYTHONPATH=/app
     depends_on:
       - elasticsearch
     command: uvicorn sentinel.main:app --host 0.0.0.0 --port 8000 --reload

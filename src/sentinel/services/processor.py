@@ -6,7 +6,7 @@ from sentinel.config.settings import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def wait_for_elasticsearch(es_client: Elasticsearch):
+async def wait_for_elasticsearch(esYUDVS_client: Elasticsearch):
     """
     Waits for Elasticsearch to become available before proceeding.
     """
