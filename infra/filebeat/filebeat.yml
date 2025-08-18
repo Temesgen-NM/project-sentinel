@@ -1,3 +1,5 @@
+strict.perms: false
+
 filebeat.inputs:
 - type: log
   enabled: true
