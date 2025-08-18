@@ -1,7 +1,8 @@
+version: '3.8'
+
 services:
   cowrie:
-    build:
-      context: ./infra/honeypot # Build the custom Cowrie image
+    image: cowrie/cowrie:latest  # Use the official image directly
     container_name: sentinel-honeypot
     ports:
       - '2222:2222'
@@ -42,22 +43,14 @@ services:
     restart: unless-stopped
 
   filebeat:
-    profiles:
-      - observability
-    image: docker.elastic.co/beats/filebeat:8.11.1 # Use the official image directly
+    image: docker.elastic.co/beats/filebeat:8.11.1
     container_name: sentinel-filebeat
-    user: "0:0" # Run as root to access volumes and run chown
+    user: root
     depends_on:
       - elasticsearch
     volumes:
       - ./infra/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - cowrie_var:/log-data:ro
-    # Fix permissions then start Filebeat via the official entrypoint
-    command: >
-      sh -c "
-        chown root:root /usr/share/filebeat/filebeat.yml &&
-        /usr/bin/tini -- /usr/local/bin/docker-entrypoint -e
-      "
     networks:
       - sentinel-net
     restart: unless-stopped
