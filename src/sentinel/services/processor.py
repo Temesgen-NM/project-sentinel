@@ -1,26 +1,29 @@
 import asyncio
 import logging
-from elasticsearch import Elasticsearch
+from elasticsearch import AsyncElasticsearch
 from sentinel.config.settings import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def wait_for_elasticsearch(esYUDVS_client: Elasticsearch):
+async def wait_for_elasticsearch(es_client: AsyncElasticsearch):
     """
     Waits for Elasticsearch to become available before proceeding.
     """
-    logger.info("Checking Elasticsearch connection...")
+    logger.info("Checking Elasticsearch connection (waiting for cluster health >= yellow)...")
+    # Small initial delay to let the container start
+    await asyncio.sleep(2)
     while True:
         try:
-            if es_client.ping():
+            health = await es_client.cluster.health(wait_for_status="yellow", timeout="10s")
+            status = health.get("status", "unknown")
+            logger.info(f"Elasticsearch cluster health: {status}")
+            if status in ("yellow", "green"):
                 logger.info("Elasticsearch connection successful.")
                 break
-            else:
-                logger.warning("Elasticsearch not available yet, retrying in 10 seconds...")
+            logger.warning("Elasticsearch not ready (health not yellow/green). Retrying in 10 seconds...")
         except Exception as e:
-            logger.error(f"Elasticsearch connection failed: {e}. Retrying in 10 seconds...")
-        
+            logger.error(f"Elasticsearch connection check failed: {e}. Retrying in 10 seconds...")
         await asyncio.sleep(10)
 
 def calculate_risk_score(event: dict) -> tuple[int, list[str]]:
@@ -54,17 +57,25 @@ def calculate_risk_score(event: dict) -> tuple[int, list[str]]:
     
     return min(max(score, 0), 100), factors
 
-async def process_new_events(es_client: Elasticsearch): # Accept client as argument
+async def process_new_events(es_client: AsyncElasticsearch): # Accept client as argument
     logger.info('Threat processor background task started. Waiting for events...')
     # Assumes wait_for_elasticsearch was called during app startup lifecycle
     
-    if not es_client.indices.exists(index=settings.PROCESSED_INDEX):
-        try:
-            es_client.indices.create(index=settings.PROCESSED_INDEX)
-            logger.info(f'Created Elasticsearch index: {settings.PROCESSED_INDEX}')
-        except Exception as e:
-            logger.error(f'Failed to create index {settings.PROCESSED_INDEX}: {e}')
-            return
+    # Ensure processed index exists (retry if transient failure)
+    try:
+        exists = await es_client.indices.exists(index=settings.PROCESSED_INDEX)
+    except Exception as e:
+        logger.error(f'Failed to check index existence {settings.PROCESSED_INDEX}: {e}')
+        exists = False
+    if not exists:
+        for attempt in range(5):
+            try:
+                await es_client.indices.create(index=settings.PROCESSED_INDEX)
+                logger.info(f'Created Elasticsearch index: {settings.PROCESSED_INDEX}')
+                break
+            except Exception as e:
+                logger.error(f'Failed to create index {settings.PROCESSED_INDEX} (attempt {attempt+1}/5): {e}')
+                await asyncio.sleep(5)
 
     while True:
         try:
@@ -76,7 +87,7 @@ async def process_new_events(es_client: Elasticsearch): # Accept client as argum
                 }
             }
             
-            response = es_client.search(
+            response = await es_client.search(
                 index=settings.SOURCE_INDEX,
                 query=query['query'],
                 size=100
@@ -107,12 +118,12 @@ async def process_new_events(es_client: Elasticsearch): # Accept client as argum
                     'risk_factors': risk_factors
                 }
                 
-                es_client.index(
+                await es_client.index(
                     index=settings.PROCESSED_INDEX,
                     document=processed_event
                 )
                 
-                es_client.update(
+                await es_client.update(
                     index=hit['_index'],
                     id=hit['_id'],
                     doc={'sentinel_processed': True}

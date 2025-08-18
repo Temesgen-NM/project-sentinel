@@ -2,7 +2,6 @@
 FROM docker.elastic.co/beats/filebeat:8.11.1
 
 # Copy the local configuration file into the image
-COPY filebeat.yml /usr/share/filebeat/filebeat.yml
+COPY --chown=root:root --chmod=0640 filebeat.yml /usr/share/filebeat/filebeat.yml
 
-# Set the ownership of the configuration to the root user, as required by Filebeat
-RUN chown root:root /usr/share/filebeat/filebeat.yml
+# Ownership and permissions are set at copy time above. No additional chown step needed.

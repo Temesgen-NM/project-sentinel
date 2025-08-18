@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from sentinel.api import endpoints
 from sentinel.services.processor import process_new_events, wait_for_elasticsearch
 from sentinel.config.settings import settings
-from elasticsearch import Elasticsearch
+from elasticsearch import AsyncElasticsearch
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     print("Application startup: Initializing Elasticsearch client and background tasks.")
     
     # Initialize the Elasticsearch client and attach it to the app state
-    es_client = Elasticsearch(hosts=[settings.ELASTICSEARCH_URL])
+    es_client = AsyncElasticsearch(hosts=[settings.ELASTICSEARCH_URL])
     app.state.es_client = es_client
     
     # Wait for Elasticsearch to be ready before starting the processor
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     
     # Close the Elasticsearch client connection
     if hasattr(app.state, 'es_client') and app.state.es_client:
-        app.state.es_client.close()
+        await app.state.es_client.close()
         print("Elasticsearch client closed.")
 
 app = FastAPI(
