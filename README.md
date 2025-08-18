@@ -19,11 +19,23 @@ Project-Sentinel is a self-contained, automated platform that generates high-fid
 
 ## 3. How to Run
 
-1.  Ensure Docker and Docker Compose are installed.
-2.  Create a `.env` file from the `ELASTICSEARCH_URL=http://elasticsearch:9200` and `API_KEY=your-secret-api-key-12345` variables.
-3.  Run the command: `docker-compose up -d --build`
-4.  Access the Kibana dashboard at `http://localhost:5601`.
-5.  Access the API documentation at `http://localhost:8000/docs`.
+1.  Install Docker Desktop (includes Compose). Use `docker compose`, not `docker-compose`.
+2.  Copy `.env.example` to `.env` and set values:
+    - `ELASTICSEARCH_URL=http://elasticsearch:9200`
+    - `API_KEY=<your-secret>`
+3.  Start the stack (first run builds Filebeat and app images):
+    ```bash
+    docker compose up -d --build
+    ```
+    The `bootstrap` service will automatically:
+    - Create the `geoip` ingest pipeline
+    - Create an index template for `sentinel-events` (date mapping, geo_point)
+4.  Open Kibana: `http://localhost:5601`
+5.  Open API docs: `http://localhost:8000/docs`
+
+Create two Kibana data views (after events arrive):
+- `filebeat-*` with time field `@timestamp` (raw Cowrie logs)
+- `sentinel-events` with time field `timestamp` (processed, risk-scored)
 
 ## 4. Technology Stack
 

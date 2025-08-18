@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   cowrie:
     image: cowrie/cowrie:latest  # Use the official image directly
@@ -43,17 +41,51 @@ services:
     restart: unless-stopped
 
   filebeat:
-    image: docker.elastic.co/beats/filebeat:8.11.1
+    build: ./infra/filebeat
     container_name: sentinel-filebeat
     user: root
     depends_on:
       - elasticsearch
     volumes:
-      - ./infra/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - cowrie_var:/log-data:ro
     networks:
       - sentinel-net
     restart: unless-stopped
+
+  bootstrap:
+    image: curlimages/curl:8.10.1
+    container_name: sentinel-bootstrap
+    depends_on:
+      - elasticsearch
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    command: >
+      sh -c "
+      until curl -s ${ELASTICSEARCH_URL} >/dev/null; do echo 'Waiting for Elasticsearch...'; sleep 5; done &&
+      echo 'Creating geoip ingest pipeline...' &&
+      curl -s -X PUT ${ELASTICSEARCH_URL}/_ingest/pipeline/geoip \
+        -H 'Content-Type: application/json' \
+        -d '{"processors":[{"geoip":{"field":"src_ip","target_field":"geoip","ignore_missing":true}}]}' &&
+      echo 'Creating sentinel-events index template...' &&
+      curl -s -X PUT ${ELASTICSEARCH_URL}/_index_template/sentinel-events-template \
+        -H 'Content-Type: application/json' \
+        -d '{
+              "index_patterns": ["sentinel-events"],
+              "template": {
+                "mappings": {
+                  "properties": {
+                    "timestamp": {"type": "date"},
+                    "risk_score": {"type": "integer"},
+                    "geoip": {"properties": {"location": {"type": "geo_point"}}}
+                  }
+                }
+              }
+            }' &&
+      echo 'Bootstrap completed.'
+      "
+    networks:
+      - sentinel-net
+    restart: on-failure
 
   sentinel_app:
     build: .
@@ -68,6 +100,7 @@ services:
       - PYTHONPATH=/app/src
     depends_on:
       - elasticsearch
+      - bootstrap
     command: uvicorn sentinel.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - sentinel-net
