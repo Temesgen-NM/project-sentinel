@@ -1,9 +1,10 @@
 # src/sentinel/main.py
 import asyncio
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI
 from sentinel.api import endpoints
-from sentinel.services.processor import process_new_events, wait_for_elasticsearch
+from sentinel.core.services import process_new_events, wait_for_elasticsearch
 from sentinel.config.settings import settings
 from elasticsearch import AsyncElasticsearch
 
@@ -13,7 +14,7 @@ async def lifespan(app: FastAPI):
     Manages the application's startup and shutdown events.
     Initializes the Elasticsearch client and the background processor task.
     """
-    print("Application startup: Initializing Elasticsearch client and background tasks.")
+    logging.info("Application startup: Initializing Elasticsearch client and background tasks.")
     
     # Initialize the Elasticsearch client and attach it to the app state
     es_client = AsyncElasticsearch(hosts=[settings.ELASTICSEARCH_URL])
@@ -29,18 +30,18 @@ async def lifespan(app: FastAPI):
     yield
     
     # --- Shutdown ---
-    print("Application shutdown: Cleaning up resources.")
+    logging.info("Application shutdown: Cleaning up resources.")
     # Cancel the background task
     processor_task.cancel()
     try:
         await processor_task
     except asyncio.CancelledError:
-        print("Background task cancelled.")
+        logging.info("Background task cancelled.")
     
     # Close the Elasticsearch client connection
     if hasattr(app.state, 'es_client') and app.state.es_client:
         await app.state.es_client.close()
-        print("Elasticsearch client closed.")
+        logging.info("Elasticsearch client closed.")
 
 app = FastAPI(
     title='Project-Sentinel API',
