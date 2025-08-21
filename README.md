@@ -44,6 +44,20 @@ Create two Kibana data views (after events arrive):
 *   **Sensor:** Cowrie Honeypot
 *   **Infrastructure:** Docker, Docker Compose
 
+## 6. Security Notes
+
+*  **Local-only by default:** Kibana (`5601`), Elasticsearch (`9200`), and the API (`8000`) are bound to `127.0.0.1` to avoid public exposure. If deploying to a server, front these with a reverse proxy or carefully open ports with proper auth.
+*  **API authentication:** Intelligence endpoints under `/api/v1/*` require `X-API-KEY`. Set `API_KEY` in `.env`.
+*  **Optional secured Elasticsearch:** If you enable Elastic security, provide credentials and (optionally) TLS settings in `.env`:
+   - `ELASTICSEARCH_USERNAME`, `ELASTICSEARCH_PASSWORD`
+   - `ELASTICSEARCH_URL` using `https://...`
+   - `ELASTICSEARCH_VERIFY_CERTS=true` and (if needed) `ELASTICSEARCH_CA_CERTS=/app/certs/ca.crt`
+  Filebeat and the app will use these automatically.
+
+## Author
+
+Temesgen Melaku
+
 ## 5. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

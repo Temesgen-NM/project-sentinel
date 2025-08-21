@@ -17,7 +17,21 @@ async def lifespan(app: FastAPI):
     logging.info("Application startup: Initializing Elasticsearch client and background tasks.")
     
     # Initialize the Elasticsearch client and attach it to the app state
-    es_client = AsyncElasticsearch(hosts=[settings.ELASTICSEARCH_URL])
+    es_kwargs = {
+        "hosts": [settings.ELASTICSEARCH_URL],
+    }
+    # Optional basic auth
+    if settings.ELASTICSEARCH_USERNAME and settings.ELASTICSEARCH_PASSWORD:
+        es_kwargs["basic_auth"] = (
+            settings.ELASTICSEARCH_USERNAME,
+            settings.ELASTICSEARCH_PASSWORD,
+        )
+    # Optional TLS verification
+    if settings.ELASTICSEARCH_CA_CERTS:
+        es_kwargs["ca_certs"] = settings.ELASTICSEARCH_CA_CERTS
+    es_kwargs["verify_certs"] = settings.ELASTICSEARCH_VERIFY_CERTS
+
+    es_client = AsyncElasticsearch(**es_kwargs)
     app.state.es_client = es_client
     
     # Wait for Elasticsearch to be ready before starting the processor

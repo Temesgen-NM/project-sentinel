@@ -21,7 +21,7 @@ services:
     volumes:
       - elastic_data:/usr/share/elasticsearch/data
     ports:
-      - '9200:9200'
+      - '127.0.0.1:9200:9200'
     networks:
       - sentinel-net
     restart: unless-stopped
@@ -30,7 +30,7 @@ services:
     image: docker.elastic.co/kibana/kibana:8.11.1
     container_name: sentinel-kibana
     ports:
-      - '5601:5601'
+      - '127.0.0.1:5601:5601'
     depends_on:
       - elasticsearch
     environment:
@@ -48,6 +48,8 @@ services:
       - elasticsearch
     volumes:
       - cowrie_var:/log-data:ro
+    env_file:
+      - .env
     networks:
       - sentinel-net
     restart: unless-stopped
@@ -91,7 +93,7 @@ services:
     build: .
     container_name: sentinel-app
     ports:
-      - '8000:8000'
+      - '127.0.0.1:8000:8000'
     volumes:
       - ./src:/app/src
     env_file:

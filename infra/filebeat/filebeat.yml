@@ -16,5 +16,7 @@ processors:
       ignore_missing: true
 
 output.elasticsearch:
-  hosts: ["elasticsearch:9200"]
+  hosts: ["${ELASTICSEARCH_URL:http://elasticsearch:9200}"]
   pipeline: geoip
+  username: "${ELASTICSEARCH_USERNAME:}"
+  password: "${ELASTICSEARCH_PASSWORD:}"
