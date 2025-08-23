@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Security, HTTPException, Depends, Request
+import secrets
 from fastapi.security import APIKeyHeader
 from elasticsearch import AsyncElasticsearch
 from sentinel.config.settings import settings
@@ -14,7 +15,8 @@ def get_es_client(request: Request) -> AsyncElasticsearch:
     return request.app.state.es_client
 
 def get_api_key(api_key: str = Security(api_key_header)):
-    if api_key == settings.API_KEY:
+    # Use secrets.compare_digest to prevent timing attacks
+    if secrets.compare_digest(api_key, settings.API_KEY):
         return api_key
     else:
         raise HTTPException(

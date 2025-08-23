@@ -103,7 +103,9 @@ services:
     depends_on:
       - elasticsearch
       - bootstrap
-    command: uvicorn sentinel.main:app --host 0.0.0.0 --port 8000 --reload
+    # The --reload flag is for development. For a more robust setup, use a process
+    # manager like Gunicorn to manage Uvicorn workers.
+    command: uvicorn sentinel.main:app --host 0.0.0.0 --port 8000
     networks:
       - sentinel-net
     restart: unless-stopped
