@@ -1,7 +1,11 @@
 # infra/filebeat/Dockerfile
-FROM docker.elastic.co/beats/filebeat:8.11.1
+FROM docker.elastic.co/beats/filebeat:8.18.4
+
+# Create a non-root user
+RUN adduser -D -u 1000 filebeat
 
 # Copy the local configuration file into the image
-COPY --chown=root:root --chmod=0640 filebeat.yml /usr/share/filebeat/filebeat.yml
+COPY --chown=filebeat:filebeat --chmod=0640 filebeat.yml /usr/share/filebeat/filebeat.yml
 
-# Ownership and permissions are set at copy time above. No additional chown step needed.
+# Switch to the non-root user
+USER filebeat

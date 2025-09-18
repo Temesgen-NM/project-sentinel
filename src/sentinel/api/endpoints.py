@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Security, HTTPException, Depends, Request
+from fastapi import APIRouter, Security, HTTPException, Depends, Request, Query
 import secrets
 from fastapi.security import APIKeyHeader
 from elasticsearch import AsyncElasticsearch
@@ -29,7 +29,10 @@ def health_check():
     return {'status': 'ok'}
 
 @router.get('/events/latest', tags=['Intelligence'], dependencies=[Security(get_api_key)])
-async def get_latest_events(limit: int = 10, es_client: AsyncElasticsearch = Depends(get_es_client)):
+async def get_latest_events(
+    limit: int = Query(10, gt=0, le=settings.API_EVENT_LIMIT),
+    es_client: AsyncElasticsearch = Depends(get_es_client)
+):
     query = {
         'query': {'match_all': {}},
         'sort': [{'timestamp': {'order': 'desc'}}],
@@ -44,12 +47,15 @@ async def get_latest_events(limit: int = 10, es_client: AsyncElasticsearch = Dep
     return [hit['_source'] for hit in response['hits']['hits']]
 
 @router.get('/events/high-risk', tags=['Intelligence'], dependencies=[Security(get_api_key)])
-async def get_high_risk_events(limit: int = 25, es_client: AsyncElasticsearch = Depends(get_es_client)):
+async def get_high_risk_events(
+    limit: int = Query(25, gt=0, le=settings.API_EVENT_LIMIT),
+    es_client: AsyncElasticsearch = Depends(get_es_client)
+):
     query = {
         'query': {
             'range': {
                 'risk_score': {
-                    'gte': 70
+                    'gte': settings.HIGH_RISK_SCORE_THRESHOLD
                 }
             }
         },

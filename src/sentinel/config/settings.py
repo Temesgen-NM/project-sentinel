@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     ELASTICSEARCH_VERIFY_CERTS: bool = True
     ELASTICSEARCH_CA_CERTS: str | None = None
 
+    # Application settings
+    HIGH_RISK_SCORE_THRESHOLD: int = 70
+    GEOIP_RISK_COUNTRIES: list[str] = ['Russian Federation', 'China', 'Iran']
+    API_EVENT_LIMIT: int = 1000
+
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
 settings = Settings()

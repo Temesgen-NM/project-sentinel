@@ -1,6 +1,6 @@
 # Project-Sentinel
 
-*An AI-Powered Threat Intelligence Platform for Proactive Security Defense.*
+*A Rules-Based Threat Intelligence Platform for Proactive Security Defense.*
 
 ---
 
@@ -12,7 +12,7 @@ Project-Sentinel is a self-contained, automated platform that generates high-fid
 
 *   **Live Threat Capture:** Utilizes a Cowrie SSH/Telnet honeypot to capture attacker interactions in real-time.
 *   **Automated Processing Pipeline:** A continuous background process automatically fetches, cleans, and structures raw log data.
-*   **Heuristic AI Risk Scoring:** Each event is analyzed and assigned a risk score based on its characteristics (e.g., successful logins, commands executed), allowing for instant threat prioritization.
+*   **Heuristic Risk Scoring:** Each event is analyzed and assigned a risk score based on its characteristics (e.g., successful logins, commands executed), allowing for instant threat prioritization.
 *   **REST API for Intelligence:** A secure, documented FastAPI provides endpoints to access the processed intelligence, including a dedicated endpoint for high-risk events.
 *   **Interactive C-SOC Dashboard:** A Kibana dashboard provides a geo-map of attacker origins, a sortable table of threats by risk score, and other key visualizations.
 *   **Fully Containerized:** The entire stack is managed via Docker Compose for easy deployment and scalability.
@@ -39,8 +39,8 @@ Create two Kibana data views (after events arrive):
 
 ## 4. Technology Stack
 
-*   **Application & API:** Python 3, FastAPI
-*   **Data Platform & AI:** The Elastic Stack (Elasticsearch, Kibana, Filebeat)
+*   **Application & API:** Python 3, FastAPI, Gunicorn
+*   **Data Platform:** The Elastic Stack (Elasticsearch, Kibana, Filebeat)
 *   **Sensor:** Cowrie Honeypot
 *   **Infrastructure:** Docker, Docker Compose
 

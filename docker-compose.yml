@@ -1,6 +1,6 @@
 services:
   cowrie:
-    image: cowrie/cowrie:latest  # Use the official image directly
+    image: cowrie/cowrie:latest
     container_name: sentinel-honeypot
     ports:
       - '2222:2222'
@@ -13,11 +13,12 @@ services:
       - sentinel-net
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.4
     container_name: sentinel-elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=changeme-this-is-not-secure
     volumes:
       - elastic_data:/usr/share/elasticsearch/data
     ports:
@@ -25,17 +26,24 @@ services:
     networks:
       - sentinel-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-u", "elastic:changeme-this-is-not-secure", "http://localhost:9200/_cluster/health?wait_for_status=yellow"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
 
   kibana:
-    image: docker.elastic.co/kibana/kibana:8.11.1
+    image: docker.elastic.co/kibana/kibana:8.18.4
     container_name: sentinel-kibana
     ports:
       - '127.0.0.1:5601:5601'
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - xpack.security.enabled=false
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=changeme-this-is-not-secure
     networks:
       - sentinel-net
     restart: unless-stopped
@@ -43,13 +51,17 @@ services:
   filebeat:
     build: ./infra/filebeat
     container_name: sentinel-filebeat
-    user: root
+    
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     volumes:
       - cowrie_var:/log-data:ro
     env_file:
       - .env
+    environment:
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=changeme-this-is-not-secure
     networks:
       - sentinel-net
     restart: unless-stopped
@@ -58,18 +70,21 @@ services:
     image: curlimages/curl:8.10.1
     container_name: sentinel-bootstrap
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=changeme-this-is-not-secure
     command: >
       sh -c "
-      until curl -s ${ELASTICSEARCH_URL} >/dev/null; do echo 'Waiting for Elasticsearch...'; sleep 5; done &&
+      until curl -s -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL} >/dev/null; do echo 'Waiting for Elasticsearch...'; sleep 5; done &&
       echo 'Creating geoip ingest pipeline...' &&
-      curl -s -X PUT ${ELASTICSEARCH_URL}/_ingest/pipeline/geoip \
+      curl -s -X PUT -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL}/_ingest/pipeline/geoip \
         -H 'Content-Type: application/json' \
         -d '{"processors":[{"geoip":{"field":"src_ip","target_field":"geoip","ignore_missing":true}}]}' &&
       echo 'Creating sentinel-events index template...' &&
-      curl -s -X PUT ${ELASTICSEARCH_URL}/_index_template/sentinel-events-template \
+      curl -s -X PUT -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL}/_index_template/sentinel-events-template \
         -H 'Content-Type: application/json' \
         -d '{
               "index_patterns": ["sentinel-events"],
@@ -100,15 +115,22 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app/src
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=changeme-this-is-not-secure
     depends_on:
-      - elasticsearch
-      - bootstrap
-    # The --reload flag is for development. For a more robust setup, use a process
-    # manager like Gunicorn to manage Uvicorn workers.
-    command: uvicorn sentinel.main:app --host 0.0.0.0 --port 8000
+      elasticsearch:
+        condition: service_healthy
+      bootstrap:
+        condition: service_started
+    command: gunicorn --config /app/gunicorn.conf.py sentinel.main:app
     networks:
       - sentinel-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   cowrie_var:
