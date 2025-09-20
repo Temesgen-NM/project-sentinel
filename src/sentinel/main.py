@@ -14,6 +14,7 @@ async def lifespan(app: FastAPI):
     Manages the application's startup and shutdown events.
     Initializes the Elasticsearch client and the background processor task.
     """
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logging.info("Application startup: Initializing Elasticsearch client and background tasks.")
     
     # Initialize the Elasticsearch client and attach it to the app state

@@ -7,8 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     ELASTICSEARCH_URL: str = 'http://elasticsearch:9200'
-    # Default aligns with .env.example; override in production
-    API_KEY: str = 'change-me-very-secret'
+    API_KEY: str
     
     # Index names
     SOURCE_INDEX: str = 'filebeat-*'

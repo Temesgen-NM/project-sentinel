@@ -6,24 +6,18 @@ RUN useradd -m -u 1001 sentinel
 WORKDIR /app
 
 # Copy requirements and install dependencies
-COPY requirements.txt .
+COPY --chown=sentinel:sentinel requirements.txt .
 RUN pip install --no-cache-dir --timeout=100 -r requirements.txt
 
 # Copy gunicorn config
-COPY gunicorn.conf.py .
-
-# Set up virtual environment
-ENV VIRTUAL_ENV=/opt/venv
-RUN python -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+COPY --chown=sentinel:sentinel gunicorn.conf.py .
 
 # Copy application code
-COPY ./src /app/src
-
-# Change ownership of the app directory
-RUN chown -R sentinel:sentinel /app
+COPY --chown=sentinel:sentinel ./src /app/src
 
 # Switch to the non-root user
 USER sentinel
 
 EXPOSE 8000
+
+CMD ["gunicorn", "--config", "/app/gunicorn.conf.py", "sentinel.main:app"]
