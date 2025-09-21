@@ -18,7 +18,9 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=true
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD}
+    env_file:
+      - .env
     volumes:
       - elastic_data:/usr/share/elasticsearch/data
     ports:
@@ -27,7 +29,7 @@ services:
       - sentinel-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-s", "-u", "elastic:${ELASTIC_PASSWORD:-changeme}", "http://localhost:9200/_cluster/health?wait_for_status=yellow"]
+      test: ["CMD", "curl", "-s", "-u", "elastic:${ELASTICSEARCH_PASSWORD}", "http://localhost:9200/_cluster/health?wait_for_status=yellow"]
       interval: 10s
       timeout: 10s
       retries: 12
@@ -42,7 +44,10 @@ services:
         condition: service_healthy
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
+    env_file:
+      - .env
     networks:
       - sentinel-net
     restart: unless-stopped
@@ -60,7 +65,7 @@ services:
       - .env
     environment:
       - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
     networks:
       - sentinel-net
     restart: unless-stopped
@@ -74,31 +79,11 @@ services:
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
+    env_file:
+      - .env
     command: >
-      sh -c "
-      until curl -s -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL} >/dev/null; do echo 'Waiting for Elasticsearch...'; sleep 5; done &&
-      echo 'Creating geoip ingest pipeline...' &&
-      curl -s -X PUT -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL}/_ingest/pipeline/geoip \
-        -H 'Content-Type: application/json' \
-        -d '{"processors":[{"geoip":{"field":"src_ip","target_field":"geoip","ignore_missing":true}}]}' &&
-      echo 'Creating sentinel-events index template...' &&
-      curl -s -X PUT -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL}/_index_template/sentinel-events-template \
-        -H 'Content-Type: application/json' \
-        -d '{
-              "index_patterns": ["sentinel-events"],
-              "template": {
-                "mappings": {
-                  "properties": {
-                    "timestamp": {"type": "date"},
-                    "risk_score": {"type": "integer"},
-                    "geoip": {"properties": {"location": {"type": "geo_point"}}}
-                  }
-                }
-              }
-            }' &&
-      echo 'Bootstrap completed.'
-      "
+      /bin/sh -c "until curl -s -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL} >/dev/null; do echo 'Waiting for Elasticsearch...'; sleep 5; done && curl -s -X PUT -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL}/_ingest/pipeline/geoip -H 'Content-Type: application/json' -d '{\"processors\":[{\"geoip\":{\"field\":\"src_ip\",\"target_field\":\"geoip\",\"ignore_missing\":true}}]}' && curl -s -X PUT -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL}/_index_template/sentinel-events-template -H 'Content-Type: application/json' -d '{\"index_patterns\": [\"sentinel-events\"],\"template\": {\"mappings\": {\"properties\": {\"timestamp\": {\"type\": \"date\"},\"risk_score\": {\"type\": \"integer\"},\"geoip\": {\"properties\": {\"location\": {\"type\": \"geo_point\"}}}}}}}}' && echo 'Bootstrap completed.'"
     networks:
       - sentinel-net
     restart: on-failure
@@ -115,7 +100,7 @@ services:
     environment:
       - PYTHONPATH=/app/src
       - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -128,12 +113,7 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
 
 volumes:
   cowrie_var:

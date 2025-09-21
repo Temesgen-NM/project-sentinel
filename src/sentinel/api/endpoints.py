@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Security, HTTPException, Depends, Request, Query
+from datetime import datetime, timezone
+from typing import Optional
 import secrets
 from fastapi.security import APIKeyHeader
 from elasticsearch import AsyncElasticsearch
@@ -67,5 +69,40 @@ async def get_high_risk_events(
         query=query['query'],
         sort=query['sort'],
         size=query['size']
+    )
+    return [hit['_source'] for hit in response['hits']['hits']]
+
+@router.get('/events/search', tags=['Intelligence'], dependencies=[Security(get_api_key)])
+async def search_events(
+    source_ip: Optional[str] = Query(None, description="Filter by source IP address"),
+    start_date: Optional[datetime] = Query(None, description="ISO 8601 format, e.g., 2024-01-01T00:00:00Z"),
+    end_date: Optional[datetime] = Query(None, description="ISO 8601 format, e.g., 2024-01-02T00:00:00Z"),
+    min_risk_score: Optional[int] = Query(None, ge=0, le=100, description="Minimum risk score (0-100)"),
+    limit: int = Query(100, gt=0, le=settings.API_EVENT_LIMIT),
+    es_client: AsyncElasticsearch = Depends(get_es_client)
+):
+    """Advanced search for events with multiple filter criteria."""
+    query_must = []
+    if source_ip:
+        query_must.append({'term': {'source_ip.keyword': source_ip}})
+
+    time_range = {}
+    if start_date:
+        time_range['gte'] = start_date.isoformat()
+    if end_date:
+        time_range['lte'] = end_date.isoformat()
+    if time_range:
+        query_must.append({'range': {'timestamp': time_range}})
+
+    if min_risk_score is not None:
+        query_must.append({'range': {'risk_score': {'gte': min_risk_score}}})
+
+    query = {'bool': {'must': query_must}} if query_must else {'match_all': {}}
+
+    response = await es_client.search(
+        index=settings.PROCESSED_INDEX,
+        query=query,
+        sort=[{'timestamp': {'order': 'desc'}}],
+        size=limit
     )
     return [hit['_source'] for hit in response['hits']['hits']]

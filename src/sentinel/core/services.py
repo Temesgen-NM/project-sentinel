@@ -80,6 +80,8 @@ async def process_new_events(es_client: AsyncElasticsearch, poll_interval_second
     logger.info("Event processor started.")
 
     last_seen_ts = await get_last_processed_timestamp(es_client)
+    consecutive_errors = 0
+    MAX_CONSECUTIVE_ERRORS = 5
 
     try:
         while True:
@@ -104,8 +106,16 @@ async def process_new_events(es_client: AsyncElasticsearch, poll_interval_second
                         last_seen_ts = max_ts
                 else:
                     logger.debug("No new events since %s", last_seen_ts.isoformat())
+                
+                consecutive_errors = 0 # Reset on success
+
             except Exception as exc:  # noqa: BLE001 - keep loop alive, log error
                 logger.exception("Processor iteration error: %s", exc)
+                consecutive_errors += 1
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    logger.error("Exceeded max consecutive errors. Shutting down processor.")
+                    raise RuntimeError("Event processor failed due to repeated errors.")
+                await asyncio.sleep(5) # Wait before retrying
 
             await asyncio.sleep(poll_interval_seconds)
     except asyncio.CancelledError:
@@ -195,7 +205,7 @@ def _transform_and_score(hit: Dict[str, Any]) -> Optional[ProcessedEvent]:
     source_port = src.get("src_port") or src.get("source_port")
     geoip = src.get("geoip")
 
-    score, factors = _score_event(event_type=event_type, src=src)
+    score, factors = _score_event(event_type=event_type, src=src, timestamp=ts_dt)
 
     model = ProcessedEvent(
         timestamp=ts_dt,
@@ -213,39 +223,98 @@ def _transform_and_score(hit: Dict[str, Any]) -> Optional[ProcessedEvent]:
     return model
 
 
-def _score_event(event_type: str, src: Dict[str, Any]) -> tuple[int, List[str]]:
-    """Simple heuristic risk scoring based on Cowrie event types and context."""
+def _score_event(event_type: str, src: Dict[str, Any], timestamp: datetime) -> tuple[int, List[str]]:
+    """
+    Advanced heuristic risk scoring for Cowrie events.
+    Uses a weighted system and considers event context.
+    """
     score = 0
     factors: List[str] = []
 
-    # Event type based weights
-    if "cowrie.login.success" in event_type:
-        score += 90
-        factors.append("successful_login")
-    if "cowrie.command.input" in event_type:
-        score += 15
-        factors.append("command_input")
-    if "cowrie.session.file_download" in event_type or "cowrie.session.file_upload" in event_type:
-        score += 25
-        factors.append("file_transfer")
-    if "cowrie.login.failed" in event_type:
-        score += 10
-        factors.append("failed_login")
+    # --- Define weights for different indicators ---
+    WEIGHTS = {
+        "login_success": 80,
+        "login_failed": 10,
+        "privileged_account": 15,
+        "command_input": 5,
+        "suspicious_command": 30,
+        "file_transfer": 40,
+        "geo_risk": 10,
+        "night_activity": 5,  # Activity during non-business hours
+        "ip_reputation_risk": 50, # Placeholder for external service
+    }
 
-    # Username/password patterns
+    # --- Event Type Scoring ---
+    if "cowrie.login.success" in event_type:
+        score += WEIGHTS["login_success"]
+        factors.append("successful_login")
+    elif "cowrie.login.failed" in event_type:
+        score += WEIGHTS["login_failed"]
+        factors.append("failed_login")
+    elif "cowrie.command.input" in event_type:
+        score += WEIGHTS["command_input"]
+        factors.append("command_input")
+        # Check for suspicious commands
+        command = src.get("input", "")
+        if any(cmd in command for cmd in settings.SUSPICIOUS_COMMANDS):
+            score += WEIGHTS["suspicious_command"]
+            factors.append("suspicious_command")
+    elif "cowrie.session.file_download" in event_type or "cowrie.session.file_upload" in event_type:
+        score += WEIGHTS["file_transfer"]
+        factors.append("file_transfer")
+
+    # --- Contextual Scoring ---
     if src.get("username") in {"root", "admin"}:
-        score += 10
+        score += WEIGHTS["privileged_account"]
         factors.append("privileged_account")
 
-    # GeoIP risk: example if country is in a simple watchlist (placeholder)
     country = (src.get("geoip") or {}).get("country_name")
     if country and country in settings.GEOIP_RISK_COUNTRIES:
-        score += 5
+        score += WEIGHTS["geo_risk"]
         factors.append("geo_risk")
 
-    # Clamp 0..100
+    # Check if the event occurred at night (e.g., 10 PM to 5 AM UTC)
+    if timestamp.hour >= 22 or timestamp.hour <= 5:
+        score += WEIGHTS["night_activity"]
+        factors.append("night_activity")
+        
+    # --- IP Reputation (Placeholder) ---
+    # In a real system, you would call an external service here.
+    # This function is a placeholder to show where to integrate it.
+    if _check_ip_reputation(src.get("src_ip")):
+        score += WEIGHTS["ip_reputation_risk"]
+        factors.append("ip_reputation_risk")
+
+    # Clamp score to a 0-100 range
     score = max(0, min(100, score))
-    return score, factors
+    return score, sorted(list(set(factors))) # Return unique, sorted factors
+
+
+def _check_ip_reputation(ip_address: Optional[str]) -> bool:
+    """
+    Placeholder for checking an IP address against a reputation service
+    (e.g., AbuseIPDB, VirusTotal).
+    
+    In a real implementation, this would involve making an API call to such a service.
+    For this example, it does nothing.
+    
+    Args:
+        ip_address: The IP address to check.
+        
+    Returns:
+        True if the IP is considered high-risk, False otherwise.
+    """
+    if not ip_address:
+        return False
+    # --- Example Integration (to be implemented) ---
+    # try:
+    #     response = requests.get(f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip_address}", headers={"Key": "YOUR_API_KEY"})
+    #     data = response.json()
+    #     if data.get("data", {}).get("abuseConfidenceScore", 0) > 80:
+    #         return True
+    # except Exception as e:
+    #     logger.error(f"Failed to check IP reputation for {ip_address}: {e}")
+    return False
 
 
 async def _bulk_index_processed(

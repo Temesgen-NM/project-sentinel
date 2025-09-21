@@ -3,6 +3,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI
+from pythonjsonlogger import jsonlogger
 from sentinel.api import endpoints
 from sentinel.core.services import process_new_events, wait_for_elasticsearch
 from sentinel.config.settings import settings
@@ -14,7 +15,13 @@ async def lifespan(app: FastAPI):
     Manages the application's startup and shutdown events.
     Initializes the Elasticsearch client and the background processor task.
     """
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # Configure structured logging
+    logHandler = logging.StreamHandler()
+    formatter = jsonlogger.JsonFormatter(
+        '%(asctime)s %(name)s %(levelname)s %(message)s'
+    )
+    logHandler.setFormatter(formatter)
+    logging.basicConfig(level=logging.INFO, handlers=[logHandler])
     logging.info("Application startup: Initializing Elasticsearch client and background tasks.")
     
     # Initialize the Elasticsearch client and attach it to the app state

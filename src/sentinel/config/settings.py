@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Application settings
     HIGH_RISK_SCORE_THRESHOLD: int = 70
     GEOIP_RISK_COUNTRIES: list[str] = ['Russian Federation', 'China', 'Iran']
+    SUSPICIOUS_COMMANDS: list[str] = ['wget', 'curl', 'nc', 'netcat', 'nmap', 'chmod 777']
     API_EVENT_LIMIT: int = 1000
 
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
