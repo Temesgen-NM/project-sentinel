@@ -42,15 +42,82 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+      kibana-enrollment:
+        condition: service_completed_successfully
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=elastic
       - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
-    env_file:
-      - .env
+      - ENROLLMENT_TOKEN_FILE=/usr/share/kibana/config/enrollment-token
+    volumes:
+      - ./kibana-enrollment-token:/usr/share/kibana/config/enrollment-token:ro
     networks:
       - sentinel-net
     restart: unless-stopped
+
+  kibana-enrollment:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.4
+    container_name: sentinel-kibana-enrollment
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    command: >
+      /bin/sh -c '
+        until bin/elasticsearch-create-enrollment-token -s kibana --url "https://elasticsearch:9200" > /usr/share/elasticsearch/config/enrollment-token; do
+          echo "Waiting for Elasticsearch to be ready for Kibana enrollment...";
+          sleep 10;
+        done
+      '
+    volumes:
+      - ./kibana-enrollment-token:/usr/share/elasticsearch/config/enrollment-token
+    networks:
+      - sentinel-net
+    restart: on-failure
+
+  sentinel-user-setup:
+    image: curlimages/curl:8.10.1
+    container_name: sentinel-user-setup
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
+    env_file:
+      - .env
+    command: >
+      /bin/sh -c "
+        until curl -s -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} ${ELASTICSEARCH_URL} >/dev/null; do
+          echo 'Waiting for Elasticsearch to be ready for user setup...';
+          sleep 10;
+        done;
+        
+        echo 'Setting up sentinel_user...';
+
+        # Create sentinel_user role
+        curl -s -X POST -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} '${ELASTICSEARCH_URL}/_security/role/sentinel_user_role' -H 'Content-Type: application/json' -d '
+        {
+          \"cluster\": [\"monitor\"],
+          \"indices\": [
+            { \"names\": [\"filebeat-*\"], \"privileges\": [\"read\", \"view_index_metadata\"] },
+            { \"names\": [\"sentinel-events*\"], \"privileges\": [\"all\"] }
+          ]
+        }';
+
+        # Create sentinel_user
+        curl -s -X POST -u ${ELASTICSEARCH_USERNAME}:${ELASTICSEARCH_PASSWORD} '${ELASTICSEARCH_URL}/_security/user/sentinel_user' -H 'Content-Type: application/json' -d '
+        {
+          \"password\": \"${ELASTICSEARCH_PASSWORD}\",
+          \"roles\": [\"sentinel_user_role\"]
+        }';
+        
+        echo 'Sentinel user setup completed.';
+      "
+    networks:
+      - sentinel-net
+    restart: on-failure
+
 
   filebeat:
     build: ./infra/filebeat
@@ -64,7 +131,7 @@ services:
     env_file:
       - .env
     environment:
-      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_USERNAME=sentinel_user
       - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
     networks:
       - sentinel-net
@@ -72,10 +139,9 @@ services:
 
   bootstrap:
     image: curlimages/curl:8.10.1
-    container_name: sentinel-bootstrap
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      sentinel-user-setup:
+        condition: service_completed_successfully
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=elastic
@@ -99,7 +165,7 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app/src
-      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_USERNAME=sentinel_user
       - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
     depends_on:
       elasticsearch:
