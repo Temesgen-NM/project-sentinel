@@ -1,4 +1,8 @@
-# src/sentinel/main.py
+"""
+Main application entry point for the Sentinel API.
+Initializes the FastAPI application, manages the application lifespan,
+and includes the API endpoints.
+"""
 import asyncio
 from contextlib import asynccontextmanager
 import logging
@@ -13,9 +17,14 @@ from elasticsearch import AsyncElasticsearch
 async def lifespan(app: FastAPI):
     """
     Manages the application's startup and shutdown events.
-    Initializes the Elasticsearch client and the background processor task.
+ 
+    During startup, it initializes the Elasticsearch client, waits for it to
+    become available, and starts the background event processing task.
+ 
+    During shutdown, it gracefully cancels the background task and closes
+    the Elasticsearch client connection.
     """
-    # Configure structured logging
+    # Configure structured logging for the application
     logHandler = logging.StreamHandler()
     formatter = jsonlogger.JsonFormatter(
         '%(asctime)s %(name)s %(levelname)s %(message)s'

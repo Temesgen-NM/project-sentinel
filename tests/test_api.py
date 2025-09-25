@@ -82,6 +82,40 @@ async def test_get_high_risk_events(mock_es_client, api_key):
         assert kwargs["query"]["range"]["risk_score"]["gte"] == 70
 
 @pytest.mark.asyncio
+async def test_search_events(mock_es_client, api_key):
+    """
+    Tests the /events/search endpoint with multiple query parameters.
+    """
+    mock_es_client.search.return_value = {
+        "hits": {
+            "hits": [
+                {"_source": {"source_ip": "1.2.3.4", "risk_score": 85}},
+            ]
+        }
+    }
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/api/v1/events/search",
+            headers=api_key,
+            params={
+                "source_ip": "1.2.3.4",
+                "min_risk_score": 80,
+            }
+        )
+        
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+        
+        # Verify the query sent to Elasticsearch
+        _, kwargs = mock_es_client.search.call_args
+        query_must = kwargs["query"]["bool"]["must"]
+        
+        assert {"term": {"source_ip.keyword": "1.2.3.4"}} in query_must
+        assert {"range": {"risk_score": {"gte": 80}}} in query_must
+
+
+@pytest.mark.asyncio
 async def test_api_key_missing(mock_es_client):
     """
     Tests that a protected endpoint returns 403 Forbidden without an API key.

@@ -181,6 +181,12 @@ services:
       timeout: 5s
 
 
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+ 
 volumes:
   cowrie_var:
   elastic_data:

@@ -1,5 +1,9 @@
-"""Core services: background processing and integrations."""
-
+"""
+Core services for the Sentinel application.
+Includes the main background task for processing new events,
+functions for interacting with Elasticsearch, and the event scoring logic.
+"""
+ 
 from __future__ import annotations
 
 import asyncio
@@ -92,10 +96,13 @@ async def process_new_events(es_client: AsyncElasticsearch, poll_interval_second
                     processed_events = []
                     source_hits = []
                     for hit in new_docs:
-                        transformed = _transform_and_score(hit)
-                        if transformed:
-                            processed_events.append(transformed)
-                            source_hits.append(hit)
+                        try:
+                            transformed = _transform_and_score(hit)
+                            if transformed:
+                                processed_events.append(transformed)
+                                source_hits.append(hit)
+                        except Exception:
+                            logger.exception("Failed to transform and score event: %s", hit.get("_id"))
 
                     if processed_events:
                         await _bulk_index_processed(es_client, processed_events, source_hits=source_hits)
@@ -175,6 +182,10 @@ async def _fetch_recent_raw(es: AsyncElasticsearch, since: datetime) -> List[Dic
             all_hits.extend(hits)
             search_after_val = hits[-1]["sort"]
 
+    except NotFoundError:
+        logger.warning("PIT expired during pagination. Re-opening...")
+        pit = await es.open_point_in_time(index=settings.SOURCE_INDEX, keep_alive="1m")
+        pit_id = pit["id"]
     except Exception:
         logger.exception("Error fetching recent raw events.")
         # In case of error, return what we have so far
@@ -183,6 +194,8 @@ async def _fetch_recent_raw(es: AsyncElasticsearch, since: datetime) -> List[Dic
         if pit:
             try:
                 await es.close_point_in_time(id=pit["id"])
+            except NotFoundError:
+                logger.warning("PIT already closed or expired.")
             except Exception:
                 logger.exception("Error closing PIT.")
     
@@ -232,57 +245,47 @@ def _score_event(event_type: str, src: Dict[str, Any], timestamp: datetime) -> t
     factors: List[str] = []
 
     # --- Define weights for different indicators ---
-    WEIGHTS = {
-        "login_success": 80,
-        "login_failed": 10,
-        "privileged_account": 15,
-        "command_input": 5,
-        "suspicious_command": 30,
-        "file_transfer": 40,
-        "geo_risk": 10,
-        "night_activity": 5,  # Activity during non-business hours
-        "ip_reputation_risk": 50, # Placeholder for external service
-    }
-
+    weights = settings.SCORING_WEIGHTS
+ 
     # --- Event Type Scoring ---
     if "cowrie.login.success" in event_type:
-        score += WEIGHTS["login_success"]
+        score += weights.login_success
         factors.append("successful_login")
     elif "cowrie.login.failed" in event_type:
-        score += WEIGHTS["login_failed"]
+        score += weights.login_failed
         factors.append("failed_login")
     elif "cowrie.command.input" in event_type:
-        score += WEIGHTS["command_input"]
+        score += weights.command_input
         factors.append("command_input")
         # Check for suspicious commands
         command = src.get("input", "")
         if any(cmd in command for cmd in settings.SUSPICIOUS_COMMANDS):
-            score += WEIGHTS["suspicious_command"]
+            score += weights.suspicious_command
             factors.append("suspicious_command")
     elif "cowrie.session.file_download" in event_type or "cowrie.session.file_upload" in event_type:
-        score += WEIGHTS["file_transfer"]
+        score += weights.file_transfer
         factors.append("file_transfer")
-
+ 
     # --- Contextual Scoring ---
     if src.get("username") in {"root", "admin"}:
-        score += WEIGHTS["privileged_account"]
+        score += weights.privileged_account
         factors.append("privileged_account")
-
+ 
     country = (src.get("geoip") or {}).get("country_name")
     if country and country in settings.GEOIP_RISK_COUNTRIES:
-        score += WEIGHTS["geo_risk"]
+        score += weights.geo_risk
         factors.append("geo_risk")
-
+ 
     # Check if the event occurred at night (e.g., 10 PM to 5 AM UTC)
     if timestamp.hour >= 22 or timestamp.hour <= 5:
-        score += WEIGHTS["night_activity"]
+        score += weights.night_activity
         factors.append("night_activity")
         
     # --- IP Reputation (Placeholder) ---
     # In a real system, you would call an external service here.
     # This function is a placeholder to show where to integrate it.
     if _check_ip_reputation(src.get("src_ip")):
-        score += WEIGHTS["ip_reputation_risk"]
+        score += weights.ip_reputation_risk
         factors.append("ip_reputation_risk")
 
     # Clamp score to a 0-100 range

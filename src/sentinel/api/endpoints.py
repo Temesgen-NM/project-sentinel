@@ -1,3 +1,7 @@
+"""
+API endpoints for the Sentinel threat intelligence platform.
+Provides endpoints for health checks, and accessing processed event data.
+"""
 from fastapi import APIRouter, Security, HTTPException, Depends, Request, Query
 from datetime import datetime, timezone
 from typing import Optional
@@ -15,8 +19,16 @@ def get_es_client(request: Request) -> AsyncElasticsearch:
     This relies on the client being initialized in the lifespan of the FastAPI app.
     """
     return request.app.state.es_client
-
+ 
 def get_api_key(api_key: str = Security(api_key_header)):
+    """
+    Dependency to validate the API key provided in the X-API-KEY header.
+    """
+    if not api_key:
+        raise HTTPException(
+            status_code=403,
+            detail='API key is missing',
+        )
     # Use secrets.compare_digest to prevent timing attacks
     if secrets.compare_digest(api_key, settings.API_KEY):
         return api_key
