@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
+import httpx
 from elasticsearch import AsyncElasticsearch, NotFoundError
 
 from sentinel.config.settings import settings
@@ -91,11 +92,15 @@ async def process_new_events(es_client: AsyncElasticsearch, poll_interval_second
                     logger.info("Fetched %d new raw events since %s", len(new_docs), last_seen_ts.isoformat())
                     processed_events = []
                     source_hits = []
-                    for hit in new_docs:
-                        transformed = _transform_and_score(hit)
+                    
+                    # Create a list of tasks to run in parallel
+                    tasks = [_transform_and_score(hit) for hit in new_docs]
+                    results = await asyncio.gather(*tasks)
+                    
+                    for i, transformed in enumerate(results):
                         if transformed:
                             processed_events.append(transformed)
-                            source_hits.append(hit)
+                            source_hits.append(new_docs[i])
 
                     if processed_events:
                         await _bulk_index_processed(es_client, processed_events, source_hits=source_hits)
@@ -189,7 +194,7 @@ async def _fetch_recent_raw(es: AsyncElasticsearch, since: datetime) -> List[Dic
     return all_hits
 
 
-def _transform_and_score(hit: Dict[str, Any]) -> Optional[ProcessedEvent]:
+async def _transform_and_score(hit: Dict[str, Any]) -> Optional[ProcessedEvent]:
     """Map raw Cowrie/Filebeat event to ProcessedEvent with heuristic scoring."""
     src = hit.get("_source", {})
     ts_dt = _extract_timestamp(hit)
@@ -205,7 +210,7 @@ def _transform_and_score(hit: Dict[str, Any]) -> Optional[ProcessedEvent]:
     source_port = src.get("src_port") or src.get("source_port")
     geoip = src.get("geoip")
 
-    score, factors = _score_event(event_type=event_type, src=src, timestamp=ts_dt)
+    score, factors = await _score_event(event_type=event_type, src=src, timestamp=ts_dt)
 
     model = ProcessedEvent(
         timestamp=ts_dt,
@@ -223,7 +228,7 @@ def _transform_and_score(hit: Dict[str, Any]) -> Optional[ProcessedEvent]:
     return model
 
 
-def _score_event(event_type: str, src: Dict[str, Any], timestamp: datetime) -> tuple[int, List[str]]:
+async def _score_event(event_type: str, src: Dict[str, Any], timestamp: datetime) -> tuple[int, List[str]]:
     """
     Advanced heuristic risk scoring for Cowrie events.
     Uses a weighted system and considers event context.
@@ -281,7 +286,7 @@ def _score_event(event_type: str, src: Dict[str, Any], timestamp: datetime) -> t
     # --- IP Reputation (Placeholder) ---
     # In a real system, you would call an external service here.
     # This function is a placeholder to show where to integrate it.
-    if _check_ip_reputation(src.get("src_ip")):
+    if await _check_ip_reputation(src.get("src_ip")):
         score += WEIGHTS["ip_reputation_risk"]
         factors.append("ip_reputation_risk")
 
@@ -290,13 +295,9 @@ def _score_event(event_type: str, src: Dict[str, Any], timestamp: datetime) -> t
     return score, sorted(list(set(factors))) # Return unique, sorted factors
 
 
-def _check_ip_reputation(ip_address: Optional[str]) -> bool:
+async def _check_ip_reputation(ip_address: Optional[str]) -> bool:
     """
-    Placeholder for checking an IP address against a reputation service
-    (e.g., AbuseIPDB, VirusTotal).
-    
-    In a real implementation, this would involve making an API call to such a service.
-    For this example, it does nothing.
+    Check an IP address against the AbuseIPDB API.
     
     Args:
         ip_address: The IP address to check.
@@ -304,16 +305,32 @@ def _check_ip_reputation(ip_address: Optional[str]) -> bool:
     Returns:
         True if the IP is considered high-risk, False otherwise.
     """
-    if not ip_address:
+    if not ip_address or not settings.ABUSEIPDB_API_KEY:
         return False
-    # --- Example Integration (to be implemented) ---
-    # try:
-    #     response = requests.get(f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip_address}", headers={"Key": "YOUR_API_KEY"})
-    #     data = response.json()
-    #     if data.get("data", {}).get("abuseConfidenceScore", 0) > 80:
-    #         return True
-    # except Exception as e:
-    #     logger.error(f"Failed to check IP reputation for {ip_address}: {e}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            headers = {
+                'Accept': 'application/json',
+                'Key': settings.ABUSEIPDB_API_KEY
+            }
+            params = {
+                'ipAddress': ip_address,
+                'maxAgeInDays': '90'
+            }
+            response = await client.get('https://api.abuseipdb.com/api/v2/check', headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("data", {}).get("abuseConfidenceScore", 0) > settings.ABUSEIPDB_CONFIDENCE_THRESHOLD:
+                logger.info(f"High-risk IP detected: {ip_address} (Score: {data['data']['abuseConfidenceScore']})")
+                return True
+                
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error while checking IP reputation for {ip_address}: {e}")
+    except Exception as e:
+        logger.error(f"Failed to check IP reputation for {ip_address}: {e}")
+        
     return False
 
 

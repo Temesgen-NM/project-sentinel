@@ -54,6 +54,24 @@ services:
     networks:
       - sentinel-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  kibana-setup:
+    image: python:3.9-slim
+    container_name: sentinel-kibana-setup
+    depends_on:
+      kibana:
+        condition: service_healthy
+    volumes:
+      - ./infra/kibana:/setup
+    command: ["sh", "-c", "pip install -r /setup/requirements.txt && python /setup/setup.py"]
+    networks:
+      - sentinel-net
+    restart: on-failure
 
   kibana-enrollment:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.18.4

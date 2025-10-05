@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     SUSPICIOUS_COMMANDS: list[str] = ['wget', 'curl', 'nc', 'netcat', 'nmap', 'chmod 777']
     API_EVENT_LIMIT: int = 1000
 
+    # AbuseIPDB settings
+    ABUSEIPDB_API_KEY: str | None = None
+    ABUSEIPDB_CONFIDENCE_THRESHOLD: int = 80
+
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
 settings = Settings()

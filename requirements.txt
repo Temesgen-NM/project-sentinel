@@ -26,8 +26,8 @@ watchfiles==1.1.0
 websockets==12.0
 gunicorn==23.0.0
 python-json-logger==2.0.7
+httpx==0.27.0
 
 # Testing
 pytest==8.4.1
 pytest-asyncio==1.1.0
-httpx==0.27.0
